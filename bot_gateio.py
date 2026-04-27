@@ -38,6 +38,14 @@ def eksekusi_tanam_tebang(side, price):
     except Exception as e:
         print(f"Gagal beroperasi: {e}")
 
+    #     def eksekusi_tanam_tebang(side, price):
+    # # KITA MATIKAN FUNGSI ASLI, GANTI DENGAN SIMULASI
+    # print(f"--- [MODE SIMULASI] ---")
+    # if side == 'buy':
+    #     print(f"SIMULASI: Berhasil beli {AMOUNT_TO_BUY} di harga {price}")
+    # elif side == 'sell':
+    #     print(f"SIMULASI: Berhasil jual {AMOUNT_TO_BUY} di harga {price}")
+
 def running_robot():
     print(f"\n--- SIKLUS PINUS AKTIF ({time.strftime('%H:%M:%S')}) ---")
     
