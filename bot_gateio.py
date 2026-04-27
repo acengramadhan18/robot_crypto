@@ -12,75 +12,103 @@ exchange = ccxt.gateio({
     'options': {'defaultType': 'spot'} 
 })
 
-# Parameter Kebun
-SYMBOL = 'BTC/USDT'  # Sektor Kayu Jati
-TIMEFRAME = '5m'     # Siklus 5 Menit
-AMOUNT_TO_BUY = 0.0001 # Jumlah beli (Sesuaikan dengan saldo & min order Gate.io)
-THRESHOLD = 0.15     # % Prediksi untuk eksekusi (Sensitivitas Scalping)
+# --- PARAMETER STRATEGI ---
+SYMBOL = 'BTC/USDT'
+TIMEFRAME = '1h'          # Menggunakan 1 jam agar lebih stabil
+USDT_TO_SPEND = 10.0      # Modal per transaksi
+THRESHOLD = 0.5           # Sinyal ARIMA (%)
+CHECK_INTERVAL = 300      # Cek pasar setiap 5 menit (300 detik)
+
+# --- PENGAMAN PROFIT & RUGI ---
+TAKE_PROFIT = 1.5         # Jual otomatis jika untung 1.5%
+STOP_LOSS = 1.0           # Jual otomatis jika rugi 1.0%
+MAX_TRANSAKSI = 2
+
+# --- STATE MANAGEMENT ---
+jumlah_posisi_saat_ini = 0
+harga_beli_rata_rata = 0.0
 
 def ambil_data():
-    """Menarik data pertumbuhan dari pasar"""
-    bars = exchange.fetch_ohlcv(SYMBOL, timeframe=TIMEFRAME, limit=150)
-    df = pd.DataFrame(bars, columns=['ts', 'open', 'high', 'low', 'close', 'vol'])
-    return df['close'].astype(float)
+    try:
+        bars = exchange.fetch_ohlcv(SYMBOL, timeframe=TIMEFRAME, limit=150)
+        df = pd.DataFrame(bars, columns=['ts', 'open', 'high', 'low', 'close', 'vol'])
+        return df['close'].astype(float)
+    except Exception as e:
+        print(f"Gagal menarik data: {e}")
+        return None
 
-def eksekusi_tanam_tebang(side, price):
-    """Fungsi untuk transaksi riil"""
+def eksekusi_tanam_tebang(side, amount_btc, price):
+    global jumlah_posisi_saat_ini, harga_beli_rata_rata
     try:
         if side == 'buy':
-            print(f">>> INSTRUKSI: Kondisi subur. Sedang MENANAM {AMOUNT_TO_BUY} {SYMBOL}")
-            order = exchange.create_market_buy_order(SYMBOL, AMOUNT_TO_BUY)
+            print(f"\n[!] EKSEKUSI BELI: {amount_btc:.6f} BTC di harga {price}")
+            order = exchange.create_market_buy_order(SYMBOL, amount_btc)
+            # Update harga rata-rata beli
+            total_cost = (harga_beli_rata_rata * jumlah_posisi_saat_ini) + price
+            jumlah_posisi_saat_ini += 1
+            harga_beli_rata_rata = total_cost / jumlah_posisi_saat_ini
+            print(f"Berhasil Beli! Harga rata-rata sekarang: {harga_beli_rata_rata:.2f}")
+            
         elif side == 'sell':
-            print(f">>> INSTRUKSI: Hama terdeteksi. Sedang MENEBANG {AMOUNT_TO_BUY} {SYMBOL}")
-            order = exchange.create_market_sell_order(SYMBOL, AMOUNT_TO_BUY)
+            print(f"\n[!] EKSEKUSI JUAL: Menjual 1 posisi BTC di harga {price}")
+            order = exchange.create_market_sell_order(SYMBOL, amount_btc)
+            jumlah_posisi_saat_ini -= 1
+            if jumlah_posisi_saat_ini == 0: harga_beli_rata_rata = 0
+            print(f"Berhasil Jual! Sisa posisi: {jumlah_posisi_saat_ini}")
         
-        print(f"Laporan Berhasil: {order['id']}")
     except Exception as e:
-        print(f"Gagal beroperasi: {e}")
-
-    #     def eksekusi_tanam_tebang(side, price):
-    # # KITA MATIKAN FUNGSI ASLI, GANTI DENGAN SIMULASI
-    # print(f"--- [MODE SIMULASI] ---")
-    # if side == 'buy':
-    #     print(f"SIMULASI: Berhasil beli {AMOUNT_TO_BUY} di harga {price}")
-    # elif side == 'sell':
-    #     print(f"SIMULASI: Berhasil jual {AMOUNT_TO_BUY} di harga {price}")
+        print(f"Gagal Transaksi: {e}")
 
 def running_robot():
-    print(f"\n--- SIKLUS PINUS AKTIF ({time.strftime('%H:%M:%S')}) ---")
+    global jumlah_posisi_saat_ini, harga_beli_rata_rata
+    print(f"\n--- SCANNING ({time.strftime('%H:%M:%S')}) ---")
     
-    try:
-        # 1. Ambil data harga terbaru
-        prices = ambil_data()
-        current_price = prices.iloc[-1]
+    prices = ambil_data()
+    if prices is None: return
 
-        # 2. Forecasting (Prediksi Cuaca Harga)
-        # Menggunakan ARIMA (2,1,0) agar lebih responsif terhadap perubahan cepat
+    try:
+        current_price = prices.iloc[-1]
         model = ARIMA(prices, order=(2,1,0))
         model_fit = model.fit()
         forecast = model_fit.forecast(steps=1).iloc[0]
-
-        # 3. Hitung Selisih (Gunakan presisi 4 desimal agar tidak 0.00%)
-        diff_pct = ((forecast - current_price) / current_price) * 100
         
-        print(f"Kayu Jati Saat Ini: {current_price:.2f}")
-        print(f"Prediksi 5 Menit Depan: {forecast:.2f} ({diff_pct:+.4f}%)")
+        diff_pct = ((forecast - current_price) / current_price) * 100
+        amount_btc = round(USDT_TO_SPEND / current_price, 6)
 
-        # 4. Logika Keputusan Otomatis
-        if diff_pct > THRESHOLD:
-            eksekusi_tanam_tebang('buy', current_price)
-        elif diff_pct < -THRESHOLD:
-            eksekusi_tanam_tebang('sell', current_price)
-        else:
-            print("Status: Pertumbuhan stabil. Pantau lahan...")
+        # Hitung profit/loss saat ini jika punya posisi
+        pnl = 0.0
+        if jumlah_posisi_saat_ini > 0:
+            pnl = ((current_price - harga_beli_rata_rata) / harga_beli_rata_rata) * 100
+
+        print(f"Harga BTC : {current_price:.2f}")
+        print(f"Prediksi  : {forecast:.2f} ({diff_pct:+.4f}%)")
+        print(f"Posisi    : {jumlah_posisi_saat_ini}/{MAX_TRANSAKSI} | Floating PNL: {pnl:+.2f}%")
+
+        # --- LOGIKA EKSEKUSI ---
+
+        # 1. STOP LOSS (Paling Utama)
+        if jumlah_posisi_saat_ini > 0 and pnl <= -STOP_LOSS:
+            print(">>> EMERGENCY: Stop Loss terkena! Menyelamatkan modal...")
+            eksekusi_tanam_tebang('sell', amount_btc, current_price)
+
+        # 2. TAKE PROFIT
+        elif jumlah_posisi_saat_ini > 0 and pnl >= TAKE_PROFIT:
+            print(">>> PROFIT: Target tercapai! Mengambil keuntungan...")
+            eksekusi_tanam_tebang('sell', amount_btc, current_price)
+
+        # 3. BELI (Berdasarkan ARIMA)
+        elif diff_pct > THRESHOLD and jumlah_posisi_saat_ini < MAX_TRANSAKSI:
+            eksekusi_tanam_tebang('buy', amount_btc, current_price)
+        
+        # 4. JUAL (Berdasarkan ARIMA)
+        elif diff_pct < -THRESHOLD and jumlah_posisi_saat_ini > 0:
+            eksekusi_tanam_tebang('sell', amount_btc, current_price)
 
     except Exception as e:
-        print(f"Gangguan sinyal hutan: {e}")
+        print(f"Error: {e}")
 
-# --- JALANKAN PROGRAM ---
 if __name__ == "__main__":
-    print(f"Memulai Operasi Scalping Otomatis di {SYMBOL}...")
+    print(f"=== ROBOT PINUS V4 FINAL AKTIF ===")
     while True:
         running_robot()
-        # Untuk scalping 5m, kita cek setiap 30 detik agar tidak ketinggalan momentum
-        time.sleep(30)
+        time.sleep(CHECK_INTERVAL)
