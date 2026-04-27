@@ -4,64 +4,75 @@ import numpy as np
 from statsmodels.tsa.arima.model import ARIMA
 import time
 
-# 1. Konfigurasi API Gate.io
+# --- KONFIGURASI OPERASI (RAHASIA) ---
 exchange = ccxt.gateio({
-    'apiKey': 'YOUR_API_KEY',
-    'secret': 'YOUR_SECRET_KEY',
+    'apiKey': 'ISI_API_KEY_ANDA_DISINI',
+    'secret': 'ISI_SECRET_KEY_ANDA_DISINI',
     'enableRateLimit': True,
+    'options': {'defaultType': 'spot'} 
 })
 
-symbol = 'BTC/USDT'
-timeframe = '5m'  # Data per jam
+# Parameter Kebun
+SYMBOL = 'BTC/USDT'  # Sektor Kayu Jati
+TIMEFRAME = '5m'     # Siklus 5 Menit
+AMOUNT_TO_BUY = 0.0001 # Jumlah beli (Sesuaikan dengan saldo & min order Gate.io)
+THRESHOLD = 0.15     # % Prediksi untuk eksekusi (Sensitivitas Scalping)
 
-def fetch_data(symbol, timeframe):
-    """Mengambil data historis harga closing"""
-    bars = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=100)
-    df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+def ambil_data():
+    """Menarik data pertumbuhan dari pasar"""
+    bars = exchange.fetch_ohlcv(SYMBOL, timeframe=TIMEFRAME, limit=150)
+    df = pd.DataFrame(bars, columns=['ts', 'open', 'high', 'low', 'close', 'vol'])
     return df['close'].astype(float)
 
-def forecast_price(series):
-    """Forecasting harga periode berikutnya menggunakan model ARIMA"""
+def eksekusi_tanam_tebang(side, price):
+    """Fungsi untuk transaksi riil"""
     try:
-        # Model ARIMA (p,d,q) sederhana
-        model = ARIMA(series, order=(5, 1, 0))
-        model_fit = model.fit()
-        forecast = model_fit.forecast(steps=1)
-        return forecast.iloc[0]
-    except:
-        return None
-
-def execute_trade():
-    print(f"Memulai pemindaian untuk {symbol}...")
-    
-    # Ambil data terbaru
-    prices = fetch_data(symbol, timeframe)
-    current_price = prices.iloc[-1]
-    
-    # Prediksi harga jam berikutnya
-    predicted_price = forecast_price(prices)
-    
-    if predicted_price:
-        change_pct = ((predicted_price - current_price) / current_price) * 100
-        print(f"Harga Sekarang: {current_price:.2f} | Prediksi: {predicted_price:.2f} ({change_pct:.2f}%)")
-
-        # LOGIKA STRATEGI (Contoh Sederhana)
-        # Jika prediksi naik lebih dari 0.5%, maka BELI
-        if change_pct > 0.15:
-            print("Sinyal: BELI (Menanam)")
-            # order = exchange.create_market_buy_order(symbol, 0.001)
-            
-        # Jika prediksi turun lebih dari 0.15%, maka JUAL
-        elif change_pct < -0.15:
-            print("Sinyal: JUAL (Menebang)")
-            # order = exchange.create_market_sell_order(symbol, 0.001)
-        else:
-            print("Sinyal: HOLD (Pantau)")
-# Loop utama robot
-while True:
-    try:
-        execute_trade()
+        if side == 'buy':
+            print(f">>> INSTRUKSI: Kondisi subur. Sedang MENANAM {AMOUNT_TO_BUY} {SYMBOL}")
+            order = exchange.create_market_buy_order(SYMBOL, AMOUNT_TO_BUY)
+        elif side == 'sell':
+            print(f">>> INSTRUKSI: Hama terdeteksi. Sedang MENEBANG {AMOUNT_TO_BUY} {SYMBOL}")
+            order = exchange.create_market_sell_order(SYMBOL, AMOUNT_TO_BUY)
+        
+        print(f"Laporan Berhasil: {order['id']}")
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Gagal beroperasi: {e}")
+
+def running_robot():
+    print(f"\n--- SIKLUS PINUS AKTIF ({time.strftime('%H:%M:%S')}) ---")
     
-    time.sleep(30) # Cek setiap 0.5menit
+    try:
+        # 1. Ambil data harga terbaru
+        prices = ambil_data()
+        current_price = prices.iloc[-1]
+
+        # 2. Forecasting (Prediksi Cuaca Harga)
+        # Menggunakan ARIMA (2,1,0) agar lebih responsif terhadap perubahan cepat
+        model = ARIMA(prices, order=(2,1,0))
+        model_fit = model.fit()
+        forecast = model_fit.forecast(steps=1).iloc[0]
+
+        # 3. Hitung Selisih (Gunakan presisi 4 desimal agar tidak 0.00%)
+        diff_pct = ((forecast - current_price) / current_price) * 100
+        
+        print(f"Kayu Jati Saat Ini: {current_price:.2f}")
+        print(f"Prediksi 5 Menit Depan: {forecast:.2f} ({diff_pct:+.4f}%)")
+
+        # 4. Logika Keputusan Otomatis
+        if diff_pct > THRESHOLD:
+            eksekusi_tanam_tebang('buy', current_price)
+        elif diff_pct < -THRESHOLD:
+            eksekusi_tanam_tebang('sell', current_price)
+        else:
+            print("Status: Pertumbuhan stabil. Pantau lahan...")
+
+    except Exception as e:
+        print(f"Gangguan sinyal hutan: {e}")
+
+# --- JALANKAN PROGRAM ---
+if __name__ == "__main__":
+    print(f"Memulai Operasi Scalping Otomatis di {SYMBOL}...")
+    while True:
+        running_robot()
+        # Untuk scalping 5m, kita cek setiap 30 detik agar tidak ketinggalan momentum
+        time.sleep(30)
