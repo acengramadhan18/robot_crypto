@@ -3,112 +3,167 @@ import pandas as pd
 import numpy as np
 from statsmodels.tsa.arima.model import ARIMA
 import time
+import warnings
+from statsmodels.tools.sm_exceptions import ConvergenceWarning
 
-# --- MODE SIMULASI AKTIF ---
-# Kita tidak butuh API Key asli untuk simulasi
-exchange = ccxt.gateio() 
+# --- PENGATURAN PRIVASI & WARNING ---
+warnings.simplefilter('ignore', ConvergenceWarning)
+warnings.filterwarnings("ignore")
 
-# --- PARAMETER STRATEGI ---
-SYMBOL = 'ORCA/USDT'
-TIMEFRAME = '1h'
-USDT_TO_SPEND = 10.0      # Modal simulasi per transaksi
-THRESHOLD = 0.01           # Sinyal ARIMA (%)
-CHECK_INTERVAL = 30       # Untuk simulasi, kita percepat ceknya (30 detik)
+# --- MODE OPERASI ---
+# Set ke False jika ingin menggunakan API Key Sub-Account untuk trading riil
+IS_SIMULATION = True 
 
-# --- PENGAMAN PROFIT & RUGI ---
-TAKE_PROFIT = 0.1         # Target simulasi untung 1.5%
-STOP_LOSS = 0.1           # Target simulasi rugi 1.0%
-MAX_TRANSAKSI = 3
+# --- KONEKSI BURSA ---
+if IS_SIMULATION:
+    exchange = ccxt.gateio() # Tanpa API Key untuk simulasi
+else:
+    exchange = ccxt.gateio({
+        'apiKey': 'ISI_API_KEY_SUB_ACCOUNT',
+        'secret': 'ISI_SECRET_KEY_SUB_ACCOUNT',
+        'enableRateLimit': True,
+        'options': {'defaultType': 'spot'}
+    })
 
-# --- STATE MANAGEMENT (SIMULASI) ---
+# --- PARAMETER STRATEGI (BISA DIUBAH) ---
+SYMBOL = 'HYPE/USDT'  # Nama koin dinamis
+TIMEFRAME = '1m'          # Scalping 5 menit
+USDT_TO_SPEND = 10.0      # Modal per transaksi (USDT)
+THRESHOLD_ARIMA = -0.01    # Sinyal ARIMA (%)
+CHECK_INTERVAL = 10       # Cek setiap 30 detik
+
+# --- PENGAMAN (RISK MANAGEMENT) ---
+TAKE_PROFIT = 0.60        # Target untung 0.15%
+STOP_LOSS = 0.40          # Batas rugi 0.10%
+MAX_TRANSAKSI = 3         # Maksimal cicilan posisi
+
+# --- STATE MANAGEMENT ---
 jumlah_posisi_saat_ini = 0
 harga_beli_rata_rata = 0.0
-total_profit_realized = 0.0 # Mencatat total cuan/rugi selama simulasi
+total_profit_realized = 0.0
 
 def ambil_data():
     try:
-        # Mengambil data asli untuk simulasi yang akurat
-        bars = exchange.fetch_ohlcv(SYMBOL, timeframe=TIMEFRAME, limit=150)
+        bars = exchange.fetch_ohlcv(SYMBOL, timeframe=TIMEFRAME, limit=200)
         df = pd.DataFrame(bars, columns=['ts', 'open', 'high', 'low', 'close', 'vol'])
-        return df['close'].astype(float)
+        df['close'] = df['close'].astype(float)
+        return df
     except Exception as e:
         print(f"Gagal menarik data pasar: {e}")
         return None
 
-def eksekusi_simulasi(side, amount_btc, price, alasan):
+def analisa_teknikal(df):
+    """Mata Tambahan: RSI dan EMA (Manual Tanpa pandas_ta)"""
+    # 1. Hitung EMA 20
+    ema_now = df['close'].ewm(span=20, adjust=False).mean().iloc[-1]
+    
+    # 2. Hitung RSI 14 secara manual
+    delta = df['close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    
+    rs = gain / loss
+    rsi_now = 100 - (100 / (1 + rs.iloc[-1]))
+    
+    return rsi_now, ema_now
+
+def eksekusi_simulasi(side, price, alasan):
     global jumlah_posisi_saat_ini, harga_beli_rata_rata, total_profit_realized
     
-    print(f"\n--- [ NOTIFIKASI SIMULASI: {side.upper()} ] ---")
-    print(f"Alasan: {alasan}")
+    print(f"\n>>> [ NOTIFIKASI {side.upper()} ] --- Alasan: {alasan}")
     
     if side == 'buy':
+        # Hitung rata-rata harga beli
         total_cost = (harga_beli_rata_rata * jumlah_posisi_saat_ini) + price
         jumlah_posisi_saat_ini += 1
         harga_beli_rata_rata = total_cost / jumlah_posisi_saat_ini
-        print(f"BERHASIL BELI: {amount_btc:.6f} BTC di harga {price:.2f}")
+        print(f"BERHASIL BELI {SYMBOL} di harga {price:.4f}")
         
     elif side == 'sell':
-        # Hitung profit/loss dari transaksi ini
         profit_persen = ((price - harga_beli_rata_rata) / harga_beli_rata_rata) * 100
-        profit_usdt = (profit_persen / 100) * USDT_TO_SPEND
+        # Simulasi profit dari modal USDT_TO_SPEND
+        profit_usdt = (profit_persen / 100) * (USDT_TO_SPEND * jumlah_posisi_saat_ini)
         total_profit_realized += profit_usdt
         
-        print(f"BERHASIL JUAL: {amount_btc:.6f} BTC di harga {price:.2f}")
-        print(f"Profit/Loss Transaksi Ini: {profit_persen:+.2f}% ({profit_usdt:+.4f} USDT)")
+        print(f"BERHASIL JUAL {SYMBOL} di harga {price:.4f}")
+        print(f"Hasil: {profit_persen:+.2f}% ({profit_usdt:+.4f} USDT)")
         
-        jumlah_posisi_saat_ini -= 1
-        if jumlah_posisi_saat_ini == 0: harga_beli_rata_rata = 0
+        jumlah_posisi_saat_ini = 0 
+        harga_beli_rata_rata = 0
     
-    print(f"Total Posisi Aktif: {jumlah_posisi_saat_ini}")
-    print(f"Akumulasi Profit Simulasi: {total_profit_realized:+.4f} USDT")
+    print(f"Posisi {SYMBOL}: {jumlah_posisi_saat_ini}/{MAX_TRANSAKSI}")
+    print(f"Total Profit Akumulasi: {total_profit_realized:+.4f} USDT")
     print("------------------------------------------")
 
 def running_robot():
-    global jumlah_posisi_saat_ini, harga_beli_rata_rata
-    print(f"\n--- SCANNING PASAR ({time.strftime('%H:%M:%S')}) ---")
+    global jumlah_posisi_saat_ini, harga_beli_rata_rata, total_profit_realized
+    print(f"\n--- SCANNING {SYMBOL} ({time.strftime('%H:%M:%S')}) ---")
     
-    prices = ambil_data()
-    if prices is None: return
+    df = ambil_data()
+    if df is None: return
 
     try:
-        current_price = prices.iloc[-1]
-        model = ARIMA(prices, order=(2,1,0))
+        current_price = df['close'].iloc[-1]
+        rsi_sekarang, ema_sekarang = analisa_teknikal(df)
+        
+        # Ramalan ARIMA
+        model = ARIMA(df['close'], order=(2,1,0))
         model_fit = model.fit()
         forecast = model_fit.forecast(steps=1).iloc[0]
         
         diff_pct = ((forecast - current_price) / current_price) * 100
-        amount_btc = round(USDT_TO_SPEND / current_price, 6)
+        amount_koin = round(USDT_TO_SPEND / current_price, 6)
 
+        # Cek Profit/Loss berjalan (Floating PNL)
         pnl = 0.0
         if jumlah_posisi_saat_ini > 0:
             pnl = ((current_price - harga_beli_rata_rata) / harga_beli_rata_rata) * 100
 
-        print(f"Harga BTC Saat Ini : {current_price:.2f}")
-        print(f"Ramalan ARIMA      : {forecast:.2f} ({diff_pct:+.4f}%)")
-        print(f"Status Posisi      : {jumlah_posisi_saat_ini}/{MAX_TRANSAKSI}")
-        if jumlah_posisi_saat_ini > 0:
-            print(f"Floating PNL       : {pnl:+.2f}%")
-
-        # --- LOGIKA EKSEKUSI SIMULASI ---
-
-        if jumlah_posisi_saat_ini > 0 and pnl <= -STOP_LOSS:
-            eksekusi_simulasi('sell', amount_btc, current_price, "STOP LOSS")
-
-        elif jumlah_posisi_saat_ini > 0 and pnl >= TAKE_PROFIT:
-            eksekusi_simulasi('sell', amount_btc, current_price, "TAKE PROFIT")
-
-        elif diff_pct > THRESHOLD and jumlah_posisi_saat_ini < MAX_TRANSAKSI:
-            eksekusi_simulasi('buy', amount_btc, current_price, "SINYAL BELI ARIMA")
+        # --- OUTPUT TERMINAL DINAMIS ---
+        print(f"Harga Sekarang  : {current_price:.4f}")
+        print(f"Ramalan ARIMA   : {forecast:.4f} ({diff_pct:+.4f}%)")
+        print(f"Indikator RSI   : {rsi_sekarang:.2f} | EMA20: {ema_sekarang:.4f}")
         
-        elif diff_pct < -THRESHOLD and jumlah_posisi_saat_ini > 0:
-            eksekusi_simulasi('sell', amount_btc, current_price, "SINYAL JUAL ARIMA")
+        # Penambahan status posisi & akumulasi di setiap scanning
+        print(f"Posisi {SYMBOL} : {jumlah_posisi_saat_ini}/{MAX_TRANSAKSI}")
+        print(f"Total Profit Akum: {total_profit_realized:+.4f} USDT")
+        
+        if jumlah_posisi_saat_ini > 0:
+            print(f"Floating PNL    : {pnl:+.2f}%")
+
+        # --- LOGIKA EKSEKUSI (TP/SL/BUY/SELL) ---
+        # 1. CEK TP / SL
+        if jumlah_posisi_saat_ini > 0 and (pnl <= -STOP_LOSS or pnl >= TAKE_PROFIT):
+            alasan_out = "STOP LOSS" if pnl <= -STOP_LOSS else "TAKE PROFIT"
+            eksekusi_simulasi('sell', current_price, alasan_out) # Hanya 3 argumen
+
+        # 2. CEK ENTRY (BELI)
+        elif diff_pct > THRESHOLD_ARIMA and jumlah_posisi_saat_ini < MAX_TRANSAKSI:
+            
+            if (rsi_sekarang > 35 and rsi_sekarang < 70) and (current_price > (ema_sekarang * 0.997)):
+                # PASTIKAN HANYA 3 ARGUMEN: side, price, alasan
+                eksekusi_simulasi('buy', current_price, "KONFLUENSI BULLISH / REBOUND")
+            
+            else:
+                if rsi_sekarang <= 35:
+                    print(f"--- Pending: Menunggu Pantulan (RSI {rsi_sekarang:.2f}) ---")
+                elif rsi_sekarang >= 70:
+                    print(f"--- Pending: Harga Pucuk (RSI {rsi_sekarang:.2f}) ---")
+                elif current_price <= (ema_sekarang * 0.997):
+                    print("--- Pending: Tren Masih Turun (Bawah EMA) ---")
+        
+        # 3. CEK EXIT SINYAL BERBALIK
+        elif (diff_pct < -THRESHOLD_ARIMA or rsi_sekarang > 88) and jumlah_posisi_saat_ini > 0:
+            eksekusi_simulasi('sell', current_price, "SINYAL JUAL / OVERBOUGHT")
 
     except Exception as e:
         print(f"Error Logika: {e}")
 
 if __name__ == "__main__":
-    print(f"=== ROBOT PINUS V4 (MODE SIMULASI) AKTIF ===")
-    print(f"Mencoba strategi di {SYMBOL} tanpa risiko saldo.")
+    status_mode = "SIMULASI" if IS_SIMULATION else "RIIL (SUB-ACCOUNT)"
+    print(f"=== ROBOT PINUS V5 DIMULAI ({status_mode}) ===")
+    print(f"Target Operasi: {SYMBOL}")
+    
     while True:
         running_robot()
         time.sleep(CHECK_INTERVAL)
