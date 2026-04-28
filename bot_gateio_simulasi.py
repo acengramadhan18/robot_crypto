@@ -19,8 +19,8 @@ if IS_SIMULATION:
     exchange = ccxt.gateio() # Tanpa API Key untuk simulasi
 else:
     exchange = ccxt.gateio({
-        'apiKey': 'ISI_API_KEY_SUB_ACCOUNT',
-        'secret': 'ISI_SECRET_KEY_SUB_ACCOUNT',
+        'apiKey': 'ISI_API_KEY_ANDA',
+        'secret': 'ISI_SECRET_KEY_ANDA',
         'enableRateLimit': True,
         'options': {'defaultType': 'spot'}
     })
@@ -28,14 +28,14 @@ else:
 # --- PARAMETER STRATEGI (BISA DIUBAH) ---
 SYMBOL = 'HYPE/USDT'  # Nama koin dinamis
 TIMEFRAME = '1m'          # Scalping 5 menit
-USDT_TO_SPEND = 10.0      # Modal per transaksi (USDT)
+USDT_TO_SPEND = 20.0      # Modal per transaksi (USDT)
 THRESHOLD_ARIMA = -0.01    # Sinyal ARIMA (%)
 CHECK_INTERVAL = 5       # Cek setiap 30 detik
 
 # --- PENGAMAN (RISK MANAGEMENT) ---
-TAKE_PROFIT = 0.02        # Target untung 0.15%
+TAKE_PROFIT = 0.03        # Target untung 0.15%
 STOP_LOSS = 0.40          # Batas rugi 0.10%
-MAX_TRANSAKSI = 3         # Maksimal cicilan posisi
+MAX_TRANSAKSI = 2         # Maksimal cicilan posisi
 
 # --- STATE MANAGEMENT ---
 jumlah_posisi_saat_ini = 0
