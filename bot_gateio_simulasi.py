@@ -30,10 +30,10 @@ SYMBOL = 'HYPE/USDT'  # Nama koin dinamis
 TIMEFRAME = '1m'          # Scalping 5 menit
 USDT_TO_SPEND = 10.0      # Modal per transaksi (USDT)
 THRESHOLD_ARIMA = -0.01    # Sinyal ARIMA (%)
-CHECK_INTERVAL = 10       # Cek setiap 30 detik
+CHECK_INTERVAL = 5       # Cek setiap 30 detik
 
 # --- PENGAMAN (RISK MANAGEMENT) ---
-TAKE_PROFIT = 0.60        # Target untung 0.15%
+TAKE_PROFIT = 0.02        # Target untung 0.15%
 STOP_LOSS = 0.40          # Batas rugi 0.10%
 MAX_TRANSAKSI = 3         # Maksimal cicilan posisi
 
@@ -132,18 +132,15 @@ def running_robot():
             print(f"Floating PNL    : {pnl:+.2f}%")
 
         # --- LOGIKA EKSEKUSI (TP/SL/BUY/SELL) ---
-        # 1. CEK TP / SL
+        # 1. CEK EXIT PRIORITAS (TP / SL)
         if jumlah_posisi_saat_ini > 0 and (pnl <= -STOP_LOSS or pnl >= TAKE_PROFIT):
             alasan_out = "STOP LOSS" if pnl <= -STOP_LOSS else "TAKE PROFIT"
-            eksekusi_simulasi('sell', current_price, alasan_out) # Hanya 3 argumen
+            eksekusi_simulasi('sell', current_price, alasan_out)
 
         # 2. CEK ENTRY (BELI)
         elif diff_pct > THRESHOLD_ARIMA and jumlah_posisi_saat_ini < MAX_TRANSAKSI:
-            
             if (rsi_sekarang > 35 and rsi_sekarang < 70) and (current_price > (ema_sekarang * 0.997)):
-                # PASTIKAN HANYA 3 ARGUMEN: side, price, alasan
                 eksekusi_simulasi('buy', current_price, "KONFLUENSI BULLISH / REBOUND")
-            
             else:
                 if rsi_sekarang <= 35:
                     print(f"--- Pending: Menunggu Pantulan (RSI {rsi_sekarang:.2f}) ---")
@@ -152,9 +149,10 @@ def running_robot():
                 elif current_price <= (ema_sekarang * 0.997):
                     print("--- Pending: Tren Masih Turun (Bawah EMA) ---")
         
-        # 3. CEK EXIT SINYAL BERBALIK
-        elif (diff_pct < -THRESHOLD_ARIMA or rsi_sekarang > 88) and jumlah_posisi_saat_ini > 0:
-            eksekusi_simulasi('sell', current_price, "SINYAL JUAL / OVERBOUGHT")
+        # 3. CEK EXIT DARURAT (HANYA JIKA SUDAH PUCUK BANGET & PROFIT)
+        # Kita hapus 'diff_pct < -THRESHOLD_ARIMA' agar tidak panik jual saat minus
+        elif rsi_sekarang > 85 and jumlah_posisi_saat_ini > 0 and pnl > 0:
+            eksekusi_simulasi('sell', current_price, "EXTREME OVERBOUGHT (SECURE PROFIT)")
 
     except Exception as e:
         print(f"Error Logika: {e}")
