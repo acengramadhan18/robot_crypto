@@ -15,7 +15,7 @@ IS_SIMULATION = True
 exchange = ccxt.gateio()
 
 # --- PARAMETER SCANNER ---
-WATCHLIST = ['HYPE/USDT', 'BTC/USDT', 'ETH/USDT', 'PENGU/USDT', 'ORCA/USDT', 'FLOKI/USDT', 'SHIB/USDT', 'DOGE/USDT', 'TAO/USDT', 'PEPE/USDT']
+WATCHLIST = ['HYPE/USDT', 'BTC/USDT', 'ETH/USDT', 'PENGU/USDT', 'ORCA/USDT', 'FLOKI/USDT', 'SHIB/USDT', 'DOGE/USDT', 'PENGU/USDT', 'FARTCOIN/USDT']
 USDT_PER_COIN = 30.0
 MAX_SLOT = 3 
 CHECK_INTERVAL = 5
@@ -114,7 +114,8 @@ def patroli_pasar():
                 alasan = "TAKE PROFIT" if pnl >= TAKE_PROFIT else "STOP LOSS"
                 eksekusi_simulasi('sell', simbol, current_price, alasan)
             else:
-                print(f"Checking {simbol}: Floating {pnl:+.2f}% | RSI: {rsi:.2f}")
+                # Menampilkan harga terbaru saat checking floating profit
+                print(f"Checking {simbol:10} | Price: {current_price:10.4f} | Floating: {pnl:+.2f}% | RSI: {rsi:.2f}")
 
         # 2. LOGIKA BELI
         elif len(dompet_simulasi) < MAX_SLOT:
@@ -125,9 +126,6 @@ def patroli_pasar():
             except:
                 diff_pct = 0
             
-            # GABUNGAN SYARAT:
-            # Wajib: RSI Murah + Pantulan (Price > Prev) + Di atas EMA
-            # Pendorong: ARIMA Positif ATAU Ada Pola Candle
             syarat_wajib = (rsi < 35 and current_price > price_prev and current_price > ema)
             syarat_pendorong = (diff_pct > THRESHOLD_ARIMA or pola is not None)
 
@@ -136,7 +134,8 @@ def patroli_pasar():
                 eksekusi_simulasi('buy', simbol, current_price, alasan)
             else:
                 status = "Pucuk" if rsi > 70 else "Wait"
-                print(f"Scanning {simbol}: RSI {rsi:.2f} ({status})")
+                # Menampilkan harga terbaru saat scanning koin yang belum dibeli
+                print(f"Scanning {simbol:10} | Price: {current_price:10.4f} | RSI: {rsi:6.2f} ({status})")
 
     print(f">> Status Slot: {len(dompet_simulasi)}/{MAX_SLOT} | Total Profit Akumulasi: {total_profit_akumulasi:+.4f} USDT")
 
